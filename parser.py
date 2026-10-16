@@ -19,7 +19,7 @@ class Parser:
         
         try:
             # Parse the HTML document using lxml
-            soup = BeautifulSoup(html_content, 'lxml')
+            soup = BeautifulSoup(html_content, 'html.parser')
             
             # Iterate over all <a> tags that have an 'href' attribute
             for tag in soup.find_all('a', href=True):

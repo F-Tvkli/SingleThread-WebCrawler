@@ -1,44 +1,62 @@
 import logging
 from typing import Set
-from urllib.parse import urljoin, urldefrag
-from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urldefrag, urlparse, urlunparse
+from bs4 import BeautifulSoup, SoupStrainer
 
 class Parser:
     """
-    Extracts and normalizes absolute URLs from raw HTML content.
-    Utilizes the C-based lxml engine for maximum single-threaded performance.
+    High-performance parsing engine. 
+    I built this using SoupStrainer to prevent memory leaks during massive crawls. 
+    Instead of loading the entire HTML tree into RAM, it only parses anchor tags.
     """
     logger = logging.getLogger(__name__)
 
     @staticmethod
-    def extract_links(html_content: str, current_url: str) -> Set[str]:
+    def normalize_url(url: str) -> str:
         """
-        Parses the HTML DOM structure, finds all anchor tags, and yields a set of clean URLs.
+        Standardizes URLs so my uniqueness checker doesn't get bloated 
+        with logically identical links that look slightly different.
         """
-        clean_urls = set()
+        url, _ = urldefrag(url)
+        parsed = urlparse(url)
         
-        try:
-            # Parse the HTML document using lxml
-            soup = BeautifulSoup(html_content, 'html.parser')
+        netloc = parsed.netloc.lower()
+        if netloc.startswith('www.'):
+            netloc = netloc[4:]
             
-            # Iterate over all <a> tags that have an 'href' attribute
-            for tag in soup.find_all('a', href=True):
+        path = parsed.path
+        if path.endswith('/') and len(path) > 1:
+            path = path[:-1]
+        
+        if path.endswith('/index.html') or path.endswith('/index.htm'):
+            path = path.rsplit('/', 1)[0]
+            if not path:
+                path = '/'
+                
+        return urlunparse((parsed.scheme.lower(), netloc, path, parsed.params, parsed.query, ''))
+
+    @staticmethod
+    def extract_links(html_content: str, current_url: str) -> Set[str]:
+        clean_urls = set()
+        try:
+            # Memory Optimization: Only parse <a> tags with an href attribute
+            # This drastically reduces RAM usage and CPU parsing time
+            only_a_tags = SoupStrainer('a', href=True)
+            soup = BeautifulSoup(html_content, 'html.parser', parse_only=only_a_tags)
+            
+            for tag in soup:
                 raw_url = tag['href'].strip()
                 
-                # Ignore empty links or JavaScript triggers
                 if not raw_url or raw_url.startswith(('javascript:', 'mailto:', 'tel:')):
                     continue
                 
-                # Convert relative URLs (e.g., /about) to absolute URLs (e.g., https://domain.com/about)
                 absolute_url = urljoin(current_url, raw_url)
+                canonical_url = Parser.normalize_url(absolute_url)
                 
-                # Remove URL fragments (e.g., #section1) to prevent logical duplicates
-                normalized_url, _ = urldefrag(absolute_url)
-                
-                clean_urls.add(normalized_url)
-                
+                if canonical_url:
+                    clean_urls.add(canonical_url)
+                    
         except Exception as e:
-            Parser.logger.error(f"Failed to parse HTML for {current_url}: {e}")
+            Parser.logger.error(f"DOM Parsing failed for {current_url}: {e}")
             
-        # Return a set to remove duplicate links found on the same page
         return clean_urls

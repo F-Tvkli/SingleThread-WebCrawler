@@ -1,3 +1,7 @@
+# Custom Crawler Data
+crawled_html_files/
+crawler_engine.log
+queue_spill.txt
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

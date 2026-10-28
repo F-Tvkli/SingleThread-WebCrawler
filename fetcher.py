@@ -1,15 +1,33 @@
 import time
 import random
 import logging
+import socket
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+# --- Application-Level DNS Cache ---
+# Intercepts socket DNS resolutions to cache IP addresses in memory.
+# This prevents the crawler from hitting the OS DNS resolver repeatedly 
+# if the TCP connection drops, satisfying industrial crawler speed requirements.
+_dns_cache = {}
+_original_getaddrinfo = socket.getaddrinfo
+
+def _cached_getaddrinfo(*args, **kwargs):
+    if args in _dns_cache:
+        return _dns_cache[args]
+    result = _original_getaddrinfo(*args, **kwargs)
+    _dns_cache[args] = result
+    return result
+
+# Apply the monkey patch
+socket.getaddrinfo = _cached_getaddrinfo
+# -----------------------------------
+
 class Fetcher:
     """
-    Robust network interface with built-in politeness delays.
-    I added randomized delays before each request to simulate human browsing patterns,
-    which is critical for preventing IP bans when crawling production environments.
+    Robust network interface with built-in politeness delays and custom DNS caching.
+    Simulates human browsing patterns to prevent IP bans when crawling production environments.
     """
     def __init__(self, timeout: int = 10, min_delay: float = 1.5, max_delay: float = 3.5):
         self.timeout = timeout
@@ -25,7 +43,7 @@ class Fetcher:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
         })
         
-        # Added 403 (Forbidden) to the retry list to handle temporary WAF blocks
+        # Handling 403 (Forbidden) and 429 (Too Many Requests) for WAF evasion
         retry_strategy = Retry(
             total=3,
             backoff_factor=2,
@@ -42,6 +60,7 @@ class Fetcher:
             delay = random.uniform(self.min_delay, self.max_delay)
             time.sleep(delay)
             
+            # Pre-flight check
             head_resp = self.session.head(url, timeout=self.timeout, allow_redirects=True)
             content_type = head_resp.headers.get('Content-Type', '').lower()
             

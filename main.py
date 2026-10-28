@@ -17,7 +17,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def get_directory_size_mb(directory: str) -> float:
-    """Utility to calculate the physical disk footprint of the crawled data."""
     total_size = 0
     for dirpath, _, filenames in os.walk(directory):
         for f in filenames:
@@ -27,19 +26,20 @@ def get_directory_size_mb(directory: str) -> float:
     return total_size / (1024 * 1024)
 
 def main():
-    TARGET_DOMAIN = "books.toscrape.com"
-    START_URL = "https://books.toscrape.com/"
+    # Targeted Production Environment
+    TARGET_DOMAIN = "torob.com"
+    START_URL = "https://torob.com/"
     MAX_PAGES = 10000
     SAVE_DIR = "crawled_html_files"
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (MyPersonalCrawlerBot/1.0)"
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
 
     os.makedirs(SAVE_DIR, exist_ok=True)
     
-    # Injecting core modules
     frontier = URLFrontier(base_domain=TARGET_DOMAIN, user_agent=USER_AGENT, max_depth=10)
-    fetcher = Fetcher(timeout=5)
     
-    # Bootstrapping the URL Frontier
+    # Passing the anti-bot delays (between 1.5 to 3.5 seconds per request)
+    fetcher = Fetcher(timeout=10, min_delay=1.5, max_delay=3.5)
+    
     frontier.add_url(START_URL, depth=0)
     downloaded_count = 0
     start_time = time.time()
@@ -71,7 +71,6 @@ def main():
                 logger.error(f"I/O Exception on write: {e}")
                 continue
                 
-            # Increment strictly upon successful disk persist
             downloaded_count += 1
             logger.info(f"[NODE EXECUTED] {downloaded_count}/{MAX_PAGES} | Depth: {current_depth} | URL: {current_url}")
 
